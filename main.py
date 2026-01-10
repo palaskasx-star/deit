@@ -151,7 +151,7 @@ def get_args_parser():
     
     # * Finetuning params
     parser.add_argument('--finetune', action='store_true', help='finetune from checkpoint')
-    parser.add_argument('--linnear_probe', action='store_true', help='finetune from checkpoint')
+    parser.add_argument('--linnear-probe', action='store_true', help='finetune from checkpoint')
     parser.add_argument('--attn-only', action='store_true') 
     
     # Dataset parameters
