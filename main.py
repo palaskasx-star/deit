@@ -23,11 +23,11 @@ from losses import DistillationLoss
 from samplers import RASampler
 from augment import new_data_aug_generator
 
-import models
-import models_v2
 
 import utils
 
+from create_divergence_plots import create_divergence_plots
+from customized_forward import register_forward, get_layer_names
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
@@ -157,7 +157,7 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data-path', default='/datasets01/imagenet_full_size/061417/', type=str,
                         help='dataset path')
-    parser.add_argument('--data-set', default='IMNET', choices=['CIFAR', 'IMNET', 'INAT', 'INAT19'],
+    parser.add_argument('--data-set', default='IMNET', choices=['CIFAR', 'IMNET', 'INAT', 'INAT19', 'IMNET100'],
                         type=str, help='Image Net dataset path')
     parser.add_argument('--inat-category', default='name',
                         choices=['kingdom', 'phylum', 'class', 'order', 'supercategory', 'family', 'genus', 'name'],
@@ -186,11 +186,21 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+
+    # probabilistic analysis
+    parser.add_argument('--prob_analysis', action='store_true', default=False, help='Create the probabilistic plots')
+
+
     return parser
 
 
 def main(args):
     utils.init_distributed_mode(args)
+
+    output_dir = Path(args.output_dir)
+    extra_info = f"model_{args.model}"
+    output_dir = output_dir / extra_info
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     print(args)
 
@@ -319,6 +329,19 @@ def main(args):
             
     model.to(device)
 
+    if args.prob_analysis:
+        register_forward(model, args.model)
+
+        for param in model.parameters():
+            param.requires_grad = False
+            
+        names = get_layer_names(model)
+        train_stats = create_divergence_plots(data_loader_train, model, 'Train', names, output_dir, device)
+
+        test_stats = create_divergence_plots(data_loader_val, model, 'Val', names, output_dir, device)
+
+        return
+
     model_ema = None
     if args.model_ema:
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
@@ -380,7 +403,8 @@ def main(args):
         criterion, teacher_model, args.distillation_type, args.distillation_alpha, args.distillation_tau
     )
 
-    output_dir = Path(args.output_dir)
+
+
     if args.resume:
         if args.resume.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(

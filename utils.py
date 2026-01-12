@@ -14,6 +14,14 @@ import datetime
 import torch
 import torch.distributed as dist
 
+import matplotlib.pyplot as plt
+from matplotlib.cm import get_cmap
+import numpy as np
+import argparse
+import torch
+import plotly.graph_objs as go
+import plotly.io as pio
+from plotly.colors import sample_colorscale
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -236,3 +244,111 @@ def init_distributed_mode(args):
                                          world_size=args.world_size, rank=args.rank)
     torch.distributed.barrier()
     setup_for_distributed(args.rank == 0)
+
+def create_divergence_names(layer_names):
+    divergence_names = layer_names.copy()
+    divergence_names.append( 'y')
+    print(f"divergence_names{divergence_names}")
+
+    step_divergence_names = []
+    for i in range(len(divergence_names)-1):
+        step_divergence_names.append(fr'$D_J \left( p \left({divergence_names[i]}\right),p \left({divergence_names[i+1]}\right) \right)$')
+    print(f"step_divergence_names{step_divergence_names}")
+
+    label_divergence_names = []
+    for i in range(len(divergence_names)-1):
+        label_divergence_names.append(fr'$D_J \left(  p \left({divergence_names[-1]}\right), p \left({divergence_names[i]}\right) \right)$')
+    print(f"label_divergence_names{label_divergence_names}")
+
+    base_divergence_names = []
+    for i in range(len(divergence_names)-1):
+        base_divergence_names.append(fr'$D_J \left(  p \left({divergence_names[i+1]}\right), p \left({divergence_names[0]}\right) \right)$')
+    print(f"base_divergence_names{base_divergence_names}")
+
+    return step_divergence_names, label_divergence_names, base_divergence_names
+
+
+def plot_divergence(divergence, plots_path, directory, layer_pair_names, title, epochs, cosine_sim):
+
+    fig = go.Figure()
+
+    num_epochs = divergence.shape[0]
+
+    colors = sample_colorscale("Viridis", [i / (len(layer_pair_names) - 1) for i in range(len(layer_pair_names))])
+
+    for i in range(len(layer_pair_names)):
+        fig.add_trace(go.Scatter(
+            x=list(range(1, divergence.shape[0] + 1)),  # Epochs
+            y=divergence[:, i],  # KL values over epochs for one layer pair
+            mode='lines',
+            line=dict(color=colors[i]),
+            name= layer_pair_names[i],
+            hoverinfo='name+y'
+        ))
+
+        fig.update_layout(
+            title=title,
+            xaxis_title="Epoch",
+            xaxis=dict(tickfont=dict(size=20)),   
+            yaxis_title="divergence",
+            yaxis=dict(tickfont=dict(size=20)),  
+            template="plotly_white",
+            legend=dict(font=dict(size=16))
+        )
+
+    # Ensure directory exists
+    plot_path = os.path.join(plots_path, directory)
+    os.makedirs(plot_path, exist_ok=True)
+
+    # Save as HTML
+    if cosine_sim:
+        html_file = os.path.join(plot_path, title + "_lines_cos.html")
+    else:
+        html_file = os.path.join(plot_path, title + "_lines.html")
+    pio.write_html(fig, file=html_file, auto_open=False, include_mathjax="cdn")
+
+    # Save as PNG (requires kaleido)
+    if cosine_sim:
+        png_file = os.path.join(plot_path, title + "_lines_cos.png")
+    else:
+        png_file = os.path.join(plot_path, title + "_lines.png")
+    fig.write_image(png_file, format="png", scale=2)  # scale=2 for higher resolution
+
+    fig = go.Figure()
+    colors = sample_colorscale("Viridis", [i / (num_epochs) for i in range(num_epochs)])
+
+    for i, row in enumerate(divergence):
+        fig.add_trace(go.Scatter(
+            x=layer_pair_names,
+            y=row,
+            mode='lines',
+            line=dict(color=colors[i]),
+            name=f"Epoch {i+1}",
+            hoverinfo='name+y'
+        ))
+
+    fig.update_layout(
+        title=title,
+        xaxis_title=r"$\mathrm{D}_J\left(P_{i \mid j} \,\middle\|\, Q_{i \mid j}\right)$",
+        yaxis_title="divergence",
+        template="plotly_white"
+    )
+
+    # Ensure directory exists
+    plot_path = os.path.join(plots_path, directory)
+    os.makedirs(plot_path, exist_ok=True)
+
+    # Save as HTML
+    if cosine_sim:
+        html_file = os.path.join(plot_path, title + "_cos.html")
+    else:
+        html_file = os.path.join(plot_path, title + ".html")
+    pio.write_html(fig, file=html_file, auto_open=False, include_mathjax="cdn")
+
+    # Save as PNG (requires kaleido)
+    if cosine_sim:
+        png_file = os.path.join(plot_path, title + "_cos.png")
+    else:
+        png_file = os.path.join(plot_path, title + ".png")
+    fig.write_image(png_file, format="png", scale=2)  # scale=2 for higher resolution
+
