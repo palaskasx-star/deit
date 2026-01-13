@@ -19,6 +19,7 @@ from utils import create_divergence_names, plot_divergence
 import torch.nn.functional as F
 
 import numpy as np
+import os
 
 
 @torch.no_grad()
@@ -102,7 +103,20 @@ def create_divergence_plots(data_loader, model, data_set, names, output_dir, dev
     plot_divergence(label_divergence_epoch_cls.unsqueeze(0).mean(dim=-1), output_dir, data_set , label_divergence_names, "Label divergence dist token", 1, False)
     plot_divergence(base_divergence_epoch_cls.unsqueeze(0).mean(dim=-1), output_dir, data_set , base_divergence_names, "Base divergence dist token", 1, False)
 
-
+    save_path = os.path.join(output_dir, data_set)
+    os.makedirs(save_path, exist_ok=True)
+    
+    divergence_data = {
+        "base_divergence_epoch_cls": base_divergence_epoch_cls,
+        "label_divergence_epoch_cls": label_divergence_epoch_cls,
+        "step_divergence_epoch_cls": step_divergence_epoch_cls,
+        "base_divergence_epoch": base_divergence_epoch,
+        "label_divergence_epoch": label_divergence_epoch,
+        "step_divergence_epoch": step_divergence_epoch
+    }
+    
+    torch.save(divergence_data, os.path.join(save_path, "divergence_matrices.pt"))
+    
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
