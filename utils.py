@@ -269,86 +269,80 @@ def create_divergence_names(layer_names):
 
 
 def plot_divergence(divergence, plots_path, directory, layer_pair_names, title, epochs, cosine_sim):
+    # --- CRITICAL FIX FOR DDP ---
+    # Only run the plotting on the main process (Rank 0) to avoid file conflicts and crashes
+    try:
+        import torch.distributed as dist
+        if dist.is_initialized() and dist.get_rank() != 0:
+            return
+    except ImportError:
+        pass # Not running in a distributed environment
+    # ----------------------------
 
     fig = go.Figure()
-
     num_epochs = divergence.shape[0]
-
     colors = sample_colorscale("Viridis", [i / (len(layer_pair_names) - 1) for i in range(len(layer_pair_names))])
 
     for i in range(len(layer_pair_names)):
         fig.add_trace(go.Scatter(
-            x=list(range(1, divergence.shape[0] + 1)),  # Epochs
-            y=divergence[:, i],  # KL values over epochs for one layer pair
+            x=list(range(1, divergence.shape[0] + 1)),
+            y=divergence[:, i],
             mode='lines',
             line=dict(color=colors[i]),
-            name= layer_pair_names[i],
-            hoverinfo='name+y'
-        ))
-
-        fig.update_layout(
-            title=title,
-            xaxis_title="Epoch",
-            xaxis=dict(tickfont=dict(size=20)),   
-            yaxis_title="divergence",
-            yaxis=dict(tickfont=dict(size=20)),  
-            template="plotly_white",
-            legend=dict(font=dict(size=16))
-        )
-
-    # Ensure directory exists
-    plot_path = os.path.join(plots_path, directory)
-    os.makedirs(plot_path, exist_ok=True)
-
-    # Save as HTML
-    if cosine_sim:
-        html_file = os.path.join(plot_path, title + "_lines_cos.html")
-    else:
-        html_file = os.path.join(plot_path, title + "_lines.html")
-    pio.write_html(fig, file=html_file, auto_open=False, include_mathjax="cdn")
-
-    # Save as PNG (requires kaleido)
-    if cosine_sim:
-        png_file = os.path.join(plot_path, title + "_lines_cos.png")
-    else:
-        png_file = os.path.join(plot_path, title + "_lines.png")
-    fig.write_image(png_file, format="png", scale=2)  # scale=2 for higher resolution
-
-    fig = go.Figure()
-    colors = sample_colorscale("Viridis", [i / (num_epochs) for i in range(num_epochs)])
-
-    for i, row in enumerate(divergence):
-        fig.add_trace(go.Scatter(
-            x=layer_pair_names,
-            y=row,
-            mode='lines',
-            line=dict(color=colors[i]),
-            name=f"Epoch {i+1}",
+            name=layer_pair_names[i],
             hoverinfo='name+y'
         ))
 
     fig.update_layout(
+        title=title,
+        xaxis_title="Epoch",
+        xaxis=dict(tickfont=dict(size=20)),   
+        yaxis_title="divergence",
+        yaxis=dict(tickfont=dict(size=20)),  
+        template="plotly_white",
+        legend=dict(font=dict(size=16))
+    )
+
+    plot_path = os.path.join(plots_path, directory)
+    os.makedirs(plot_path, exist_ok=True)
+
+    # Save as HTML (SAFE: Does not require Kaleido/Chrome)
+    suffix = "_lines_cos" if cosine_sim else "_lines"
+    html_file = os.path.join(plot_path, f"{title}{suffix}.html")
+    pio.write_html(fig, file=html_file, auto_open=False, include_mathjax="cdn")
+
+    # --- REMOVED PNG SAVING TO PREVENT KALEIDO ERRORS ---
+    # png_file = os.path.join(plot_path, f"{title}{suffix}.png")
+    # fig.write_image(png_file, format="png", scale=2) 
+    # ----------------------------------------------------
+
+    # Second Plot Logic
+    fig2 = go.Figure() # Renamed to avoid confusion
+    colors2 = sample_colorscale("Viridis", [i / (num_epochs) for i in range(num_epochs)])
+
+    for i, row in enumerate(divergence):
+        fig2.add_trace(go.Scatter(
+            x=layer_pair_names,
+            y=row,
+            mode='lines',
+            line=dict(color=colors2[i]),
+            name=f"Epoch {i+1}",
+            hoverinfo='name+y'
+        ))
+
+    fig2.update_layout(
         title=title,
         xaxis_title=r"$\mathrm{D}_J\left(P_{i \mid j} \,\middle\|\, Q_{i \mid j}\right)$",
         yaxis_title="divergence",
         template="plotly_white"
     )
 
-    # Ensure directory exists
-    plot_path = os.path.join(plots_path, directory)
-    os.makedirs(plot_path, exist_ok=True)
+    # Save Second Plot as HTML
+    suffix2 = "_cos" if cosine_sim else ""
+    html_file2 = os.path.join(plot_path, f"{title}{suffix2}.html")
+    pio.write_html(fig2, file=html_file2, auto_open=False, include_mathjax="cdn")
 
-    # Save as HTML
-    if cosine_sim:
-        html_file = os.path.join(plot_path, title + "_cos.html")
-    else:
-        html_file = os.path.join(plot_path, title + ".html")
-    pio.write_html(fig, file=html_file, auto_open=False, include_mathjax="cdn")
-
-    # Save as PNG (requires kaleido)
-    if cosine_sim:
-        png_file = os.path.join(plot_path, title + "_cos.png")
-    else:
-        png_file = os.path.join(plot_path, title + ".png")
-    fig.write_image(png_file, format="png", scale=2)  # scale=2 for higher resolution
+    # --- REMOVED PNG SAVING ---
+    # png_file2 = os.path.join(plot_path, f"{title}{suffix2}.png")
+    # fig2.write_image(png_file2, format="png", scale=2)
 
