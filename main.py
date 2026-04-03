@@ -28,6 +28,7 @@ import models_v2
 
 import utils
 
+import customized_models
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
