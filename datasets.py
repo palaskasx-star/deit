@@ -59,16 +59,45 @@ def build_dataset(is_train, args):
     if args.data_set == 'CIFAR':
         dataset = datasets.CIFAR100(args.data_path, train=is_train, transform=transform, download=True)
         nb_classes = 100
+    
+    elif args.data_set == 'FLOWERS':
+        # Oxford Flowers-102
+        dataset = datasets.Flowers102(args.data_path, split='train' if is_train else 'test', 
+                                      transform=transform, download=True)
+        nb_classes = 102
+
+    elif args.data_set == 'PETS':
+        # Oxford-IIIT Pets
+        dataset = datasets.OxfordIIITPet(args.data_path, split='trainval' if is_train else 'test', 
+                                         transform=transform, download=True)
+        nb_classes = 37
+
+    elif args.data_set == 'AIRCRAFT':
+        # FGVC Aircraft
+        dataset = datasets.FGVCAircraft(args.data_path, split='train' if is_train else 'test', 
+                                        transform=transform, download=True)
+        nb_classes = 100
+
+    elif args.data_set == 'CARS':
+        # Stanford Cars
+        dataset = datasets.StanfordCars(args.data_path, split='train' if is_train else 'test', 
+                                        transform=transform, download=True)
+        nb_classes = 196
+
     elif args.data_set == 'IMNET':
         root = os.path.join(args.data_path, 'train' if is_train else 'val')
         dataset = datasets.ImageFolder(root, transform=transform)
         nb_classes = 1000
+
+    elif args.data_set == 'CUSTOM':
+        # Use this for your own local dataset organized in folders
+        root = os.path.join(args.data_path, 'train' if is_train else 'val')
+        dataset = datasets.ImageFolder(root, transform=transform)
+        # Automatically detect number of classes
+        nb_classes = len(dataset.classes)
+
     elif args.data_set == 'INAT':
         dataset = INatDataset(args.data_path, train=is_train, year=2018,
-                              category=args.inat_category, transform=transform)
-        nb_classes = dataset.nb_classes
-    elif args.data_set == 'INAT19':
-        dataset = INatDataset(args.data_path, train=is_train, year=2019,
                               category=args.inat_category, transform=transform)
         nb_classes = dataset.nb_classes
 
