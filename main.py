@@ -27,6 +27,7 @@ import utils
 
 import customized_models
 
+
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
     parser.add_argument('--batch-size', default=64, type=int)
@@ -154,7 +155,8 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data-path', default='/datasets01/imagenet_full_size/061417/', type=str,
                         help='dataset path')
-    parser.add_argument('--data-set', default='IMNET', choices=['CIFAR', 'IMNET', 'INAT', 'INAT19'],
+    parser.add_argument('--data-set', default='IMNET', 
+                        choices=['CIFAR', 'IMNET', 'INAT', 'INAT19', 'FLOWERS', 'PETS', 'AIRCRAFT', 'CARS', 'CUSTOM'],
                         type=str, help='Image Net dataset path')
     parser.add_argument('--inat-category', default='name',
                         choices=['kingdom', 'phylum', 'class', 'order', 'supercategory', 'family', 'genus', 'name'],
@@ -183,8 +185,52 @@ def get_args_parser():
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+
+    # Add to Optimizer parameters section
+    parser.add_argument('--layer-decay', type=float, default=0.75,
+                        help='layer-wise learning rate decay (default: 0.75)')
+
+    parser.add_argument('--save_checkpoint', action='store_true',
+            help='Apply orthogonal parametrization to the linear projector.')
+
     return parser
 
+
+
+def get_layer_decay_param_groups(model, lr, weight_decay, layer_decay):
+    """
+    Assigns a different learning rate to each layer of the ViT.
+    The head gets the full LR, and earlier layers get progressively less.
+    """
+    param_groups = []
+    # Identify the transformer blocks (usually 'blocks' in timm ViTs)
+    num_layers = len(model.blocks) + 1
+    # Build a scale for each layer: decay^(distance from head)
+    layer_scales = list(layer_decay ** (num_layers - i) for i in range(num_layers + 1))
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+            
+        # Determine layer ID
+        if name.startswith('patch_embed'):
+            layer_id = 0
+        elif name.startswith('blocks'):
+            layer_id = int(name.split('.')[1]) + 1
+        else:
+            layer_id = num_layers  # This includes the head, norm, and pos_embed
+
+        # Weight decay skip for biases and norms
+        this_weight_decay = weight_decay
+        if param.ndim == 1 or name.endswith(".bias"):
+            this_weight_decay = 0.
+
+        param_groups.append({
+            "params": [param],
+            "lr": lr * layer_scales[layer_id],
+            "weight_decay": this_weight_decay,
+        })
+    return param_groups
 
 def main(args):
     utils.init_distributed_mode(args)
@@ -276,34 +322,53 @@ def main(args):
         else:
             checkpoint = torch.load(args.finetune, map_location='cpu')
 
-        checkpoint_model = checkpoint['model']
+        # 1. Safely extract the state dict
+        # Check if weights are under 'model', 'state_dict', or the top level
+        if 'model' in checkpoint:
+            checkpoint_model = checkpoint['model']
+        elif 'state_dict' in checkpoint:
+            checkpoint_model = checkpoint['state_dict']
+        else:
+            checkpoint_model = checkpoint
+
+        # 2. Strip common prefixes (DINO often uses 'backbone.' or 'student.')
+        # This aligns checkpoint keys with your model's keys
+        checkpoint_model = {k.replace('backbone.', '').replace('student.', ''): v 
+                           for k, v in checkpoint_model.items()}
+
         state_dict = model.state_dict()
         for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
             if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
                 print(f"Removing key {k} from pretrained checkpoint")
                 del checkpoint_model[k]
 
-        # interpolate position embedding
-        pos_embed_checkpoint = checkpoint_model['pos_embed']
-        embedding_size = pos_embed_checkpoint.shape[-1]
-        num_patches = model.patch_embed.num_patches
-        num_extra_tokens = model.pos_embed.shape[-2] - num_patches
-        # height (== width) for the checkpoint position embedding
-        orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
-        # height (== width) for the new position embedding
-        new_size = int(num_patches ** 0.5)
-        # class_token and dist_token are kept unchanged
-        extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
-        # only the position tokens are interpolated
-        pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
-        pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
-        pos_tokens = torch.nn.functional.interpolate(
-            pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
-        pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
-        new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
-        checkpoint_model['pos_embed'] = new_pos_embed
+        # 3. Interpolate position embedding (with safety check)
+        if 'pos_embed' in checkpoint_model:
+            pos_embed_checkpoint = checkpoint_model['pos_embed']
+            embedding_size = pos_embed_checkpoint.shape[-1]
+            num_patches = model.patch_embed.num_patches
+            num_extra_tokens = model.pos_embed.shape[-2] - num_patches
+            
+            # Calculate original grid size
+            orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
+            new_size = int(num_patches ** 0.5)
 
-        model.load_state_dict(checkpoint_model, strict=False)
+            if orig_size != new_size:
+                print(f"Interpolating position embeddings from {orig_size} to {new_size}")
+                extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
+                pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
+                pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
+                pos_tokens = torch.nn.functional.interpolate(
+                    pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
+                pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
+                new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
+                checkpoint_model['pos_embed'] = new_pos_embed
+        else:
+            print("Warning: 'pos_embed' not found in checkpoint. Skipping interpolation.")
+
+        # 4. Load the processed state dict
+        msg = model.load_state_dict(checkpoint_model, strict=False)
+        print(f"Checkpoint loaded with message: {msg}")
         
     if args.attn_only:
         for name_p,p in model.named_parameters():
@@ -347,7 +412,15 @@ def main(args):
     if not args.unscale_lr:
         linear_scaled_lr = args.lr * args.batch_size * utils.get_world_size() / 512.0
         args.lr = linear_scaled_lr
-    optimizer = create_optimizer(args, model_without_ddp)
+    if args.layer_decay < 1.0:
+        print(f"Applying Layer-wise LR Decay: {args.layer_decay}")
+        param_groups = get_layer_decay_param_groups(
+            model_without_ddp, args.lr, args.weight_decay, args.layer_decay
+        )
+        # We manually use AdamW since we have defined the groups
+        optimizer = torch.optim.AdamW(param_groups, eps=args.opt_eps, betas=args.opt_betas or (0.9, 0.999))
+    else:
+        optimizer = create_optimizer(args, model_without_ddp)    
     loss_scaler = NativeScaler()
 
     lr_scheduler, _ = create_scheduler(args, optimizer)
@@ -397,7 +470,7 @@ def main(args):
                 args.resume, map_location='cpu', check_hash=True)
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
-        model_without_ddp.load_state_dict(checkpoint['model'])
+        model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
@@ -428,27 +501,9 @@ def main(args):
         )
 
         lr_scheduler.step(epoch)
-        if args.output_dir:
-            checkpoint_paths = [output_dir / 'checkpoint.pth']
-            for checkpoint_path in checkpoint_paths:
-                utils.save_on_master({
-                    'model': model_without_ddp.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'lr_scheduler': lr_scheduler.state_dict(),
-                    'epoch': epoch,
-                    'model_ema': get_state_dict(model_ema),
-                    'scaler': loss_scaler.state_dict(),
-                    'args': args,
-                }, checkpoint_path)
-             
-
-        test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-        
-        if max_accuracy < test_stats["acc1"]:
-            max_accuracy = test_stats["acc1"]
+        if args.save_checkpoint:
             if args.output_dir:
-                checkpoint_paths = [output_dir / 'best_checkpoint.pth']
+                checkpoint_paths = [output_dir / 'checkpoint.pth']
                 for checkpoint_path in checkpoint_paths:
                     utils.save_on_master({
                         'model': model_without_ddp.state_dict(),
@@ -459,6 +514,27 @@ def main(args):
                         'scaler': loss_scaler.state_dict(),
                         'args': args,
                     }, checkpoint_path)
+                
+
+        test_stats = evaluate(data_loader_val, model, device)
+        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
+        
+        
+        if max_accuracy < test_stats["acc1"]:
+            max_accuracy = test_stats["acc1"]
+            if args.save_checkpoint:
+                if args.output_dir:
+                    checkpoint_paths = [output_dir / 'best_checkpoint.pth']
+                    for checkpoint_path in checkpoint_paths:
+                        utils.save_on_master({
+                            'model': model_without_ddp.state_dict(),
+                            'optimizer': optimizer.state_dict(),
+                            'lr_scheduler': lr_scheduler.state_dict(),
+                            'epoch': epoch,
+                            'model_ema': get_state_dict(model_ema),
+                            'scaler': loss_scaler.state_dict(),
+                            'args': args,
+                        }, checkpoint_path)
             
         print(f'Max accuracy: {max_accuracy:.2f}%')
 
