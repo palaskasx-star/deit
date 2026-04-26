@@ -320,7 +320,7 @@ def main(args):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.finetune, map_location='cpu', check_hash=True)
         else:
-            checkpoint = torch.load(args.finetune, map_location='cpu')
+            checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
 
         # 1. Safely extract the state dict
         # Check if weights are under 'model', 'state_dict', or the top level
