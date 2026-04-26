@@ -4,7 +4,7 @@
 source /home/cpalaskas/virtual_envs/CHAD/bin/activate 
 
 # The root folder where all your models are organized
-BASE_DIR="/home/cpalaskas/models_report/organized_models"
+BASE_DIR="./../models_report/organized_models"
 
 # Iterate ONLY over Dinov3 directories: BASE_DIR / Dinov3 / Method / Size
 for setup_dir in "$BASE_DIR"/Dinov3/*/*; do
