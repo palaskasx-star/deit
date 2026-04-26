@@ -54,7 +54,7 @@ for setup_dir in "$BASE_DIR"/Dinov3/*/*; do
     python main.py \
         --model "$model_arg" \
         --finetune "$ckpt" \
-        --data-path ./../../data/cifar100 \
+        --data-path ./../data/cifar100 \
         --data-set CIFAR \
         --output_dir "$out_dir" \
         --batch-size 128 \
