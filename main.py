@@ -282,7 +282,7 @@ def main(args):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         pin_memory=args.pin_mem,
-        drop_last=True,
+        drop_last=False,
     )
     if args.ThreeAugment:
         data_loader_train.dataset.transform = new_data_aug_generator(args)
