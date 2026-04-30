@@ -239,6 +239,30 @@ def main(args):
 
     print(args)
 
+    def main(args):
+    utils.init_distributed_mode(args)
+
+    print(args)
+
+    # ==========================================================
+    # NEW CODE: Save the arguments to a JSON file
+    # ==========================================================
+    if args.output_dir and utils.is_main_process():
+        # Ensure the output directory exists
+        Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+        
+        # Save as JSON
+        args_file = Path(args.output_dir) / "training_args.json"
+        with args_file.open("w") as f:
+            json.dump(vars(args), f, indent=4)
+    # ==========================================================
+
+    if args.distillation_type != 'none' and args.finetune and not args.eval:
+        raise NotImplementedError("Finetuning with distillation not yet supported")
+
+    device = torch.device(args.device)
+    
+    # ... (rest of your existing code)
     if args.distillation_type != 'none' and args.finetune and not args.eval:
         raise NotImplementedError("Finetuning with distillation not yet supported")
 
