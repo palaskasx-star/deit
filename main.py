@@ -193,6 +193,8 @@ def get_args_parser():
     parser.add_argument('--save_checkpoint', action='store_true',
             help='Apply orthogonal parametrization to the linear projector.')
 
+    parser.add_argument('--test-eval-epochs', default=10, type=int,
+                    help='number of distributed processes')
     return parser
 
 
@@ -519,7 +521,7 @@ def main(args):
         test_stats = evaluate(data_loader_val, model, device)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         
-        if (epoch + 1) % 20 == 0 or (epoch == args.epochs - 1):
+        if (epoch + 1) % args.test_eval_epochs == 0 or (epoch == args.epochs - 1):
             test_stats = evaluate(data_loader_val, model, device)
             print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
             
