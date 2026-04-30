@@ -249,12 +249,6 @@ def main(args):
 
     device = torch.device(args.device)
     
-    # ... (rest of your existing code)
-    if args.distillation_type != 'none' and args.finetune and not args.eval:
-        raise NotImplementedError("Finetuning with distillation not yet supported")
-
-    device = torch.device(args.device)
-
     # fix the seed for reproducibility
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
