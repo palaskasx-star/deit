@@ -516,10 +516,6 @@ def main(args):
                         'scaler': loss_scaler.state_dict(),
                         'args': args,
                     }, checkpoint_path)
-                
-
-        test_stats = evaluate(data_loader_val, model, device)
-        print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         
         if (epoch + 1) % args.test_eval_epochs == 0 or (epoch == args.epochs - 1):
             test_stats = evaluate(data_loader_val, model, device)
