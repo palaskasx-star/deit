@@ -27,6 +27,8 @@ import utils
 
 import customized_models
 
+torch.serialization.add_safe_globals([argparse.Namespace])
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
