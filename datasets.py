@@ -81,7 +81,7 @@ def build_dataset(is_train, args):
     elif args.data_set == 'CARS':
         # Stanford Cars
         dataset = datasets.StanfordCars(args.data_path, split='train' if is_train else 'test', 
-                                        transform=transform, download=False)
+                                        transform=transform, download=True)
         nb_classes = 196
 
     elif args.data_set == 'IMNET':
