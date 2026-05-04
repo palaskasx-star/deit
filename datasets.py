@@ -80,8 +80,20 @@ def build_dataset(is_train, args):
 
     elif args.data_set == 'CARS':
         # Stanford Cars
-        dataset = datasets.StanfordCars(args.data_path, split='train' if is_train else 'test', 
-                                        transform=transform, download=False)
+        # Use ImageFolder because the Kaggle data is already sorted into class folders
+        import os
+        
+        # Determine if we need the train or test subfolder
+        split_folder = 'train' if is_train else 'test'
+        
+        # Construct the full path. 
+        # Note: Depending on what you passed as --data_path, you might need 
+        # to add 'car_data/car_data' to this path so it points directly to the images.
+        # Example: if args.data_path is './stanford_cars', you need the line below:
+        data_dir = os.path.join(args.data_path, 'car_data', 'car_data', split_folder)
+        
+        # Load using ImageFolder instead!
+        dataset = datasets.ImageFolder(root=data_dir, transform=transform)
         nb_classes = 196
 
     elif args.data_set == 'IMNET':
