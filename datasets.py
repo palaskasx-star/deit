@@ -88,7 +88,16 @@ def build_dataset(is_train, args):
         root = os.path.join(args.data_path, 'train' if is_train else 'val')
         dataset = datasets.ImageFolder(root, transform=transform)
         nb_classes = 1000
-
+        
+    elif args.data_set == 'CALTECH101':
+        dataset = datasets.Caltech101(
+            args.data_path,
+            target_type='category',
+            transform=transform,
+            download=True
+        )
+        nb_classes = 101
+    
     elif args.data_set == 'CUSTOM':
         # Use this for your own local dataset organized in folders
         root = os.path.join(args.data_path, 'train' if is_train else 'val')
