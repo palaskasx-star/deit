@@ -344,6 +344,8 @@ def main(args):
         # This aligns checkpoint keys with your model's keys
         checkpoint_model = {k.replace('backbone.', '').replace('student.', ''): v 
                            for k, v in checkpoint_model.items()}
+        checkpoint_model = {k[6:] if k.startswith('model.') else k: v 
+                           for k, v in checkpoint_model.items()}
 
         state_dict = model.state_dict()
         for k in ['head.weight', 'head.bias', 'head_dist.weight', 'head_dist.bias']:
